@@ -1304,7 +1304,8 @@
 		clocks = <&cru HCLK_NANDC>, <&cru SCLK_NANDC>;
 		clock-names = "ahb", "nfc";
 		assigned-clocks = <&cru SCLK_NANDC>;
-		assigned-clock-rates = <150000000>;
+	//	assigned-clock-rates = <150000000>;
+		assigned-clock-rates = <80000000>;
 		pinctrl-0 = <&flash_ale &flash_bus8 &flash_cle &flash_csn0
 			     &flash_rdn &flash_rdy &flash_wrn>;
 		pinctrl-names = "default";

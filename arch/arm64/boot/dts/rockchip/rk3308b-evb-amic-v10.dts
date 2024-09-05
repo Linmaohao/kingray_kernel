@@ -56,3 +56,15 @@
 	rockchip,mode = <1>;
 	#sound-dai-cells = <0>;
 };
+
+&emmc {
+        status = "okay";
+};
+
+&mac {
+        status = "okay";
+};
+
+&uart2 {
+        status = "okay";
+};

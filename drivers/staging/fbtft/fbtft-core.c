@@ -30,6 +30,9 @@
 #include "fbtft.h"
 #include "internal.h"
 
+#include <linux/of.h>
+#include <linux/of_gpio.h>
+
 static unsigned long debug;
 module_param(debug, ulong, 0000);
 MODULE_PARM_DESC(debug, "override device debug level");
@@ -71,61 +74,83 @@ void fbtft_dbg_hex(const struct device *dev, int groupsize,
 EXPORT_SYMBOL(fbtft_dbg_hex);
 
 static int fbtft_request_one_gpio(struct fbtft_par *par,
-				  const char *name, int index,
-				  struct gpio_desc **gpiop)
+                  const char *name, int index,
+                  struct gpio_desc **gpiop)
 {
-	struct device *dev = par->info->device;
+    struct device *dev = par->info->device;
+    struct device_node *node = dev->of_node;
+    int gpio, flags, ret = 0;
+    enum of_gpio_flags of_flags;
+    if (of_find_property(node, name, NULL)) {
+        gpio = of_get_named_gpio_flags(node, name, index, &of_flags);
+        if (gpio == -ENOENT)
+            return 0;
+        if (gpio == -EPROBE_DEFER)
+            return gpio;
+        if (gpio < 0) {
+            dev_err(dev,
+                "failed to get '%s' from DT\n", name);
+            return gpio;
+        }
+         //active low translates to initially low
+        flags = (of_flags & OF_GPIO_ACTIVE_LOW) ? GPIOF_OUT_INIT_LOW :
+                            GPIOF_OUT_INIT_HIGH;
+        ret = devm_gpio_request_one(dev, gpio, flags,
+                        dev->driver->name);
+        if (ret) {
+            dev_err(dev,
+                "gpio_request_one('%s'=%d) failed with %d\n",
+                name, gpio, ret);
+            return ret;
+        }
 
-	*gpiop = devm_gpiod_get_index_optional(dev, name, index,
-					       GPIOD_OUT_LOW);
-	if (IS_ERR(*gpiop))
-		return dev_err_probe(dev, PTR_ERR(*gpiop), "Failed to request %s GPIO\n", name);
+        *gpiop = gpio_to_desc(gpio);
+        fbtft_par_dbg(DEBUG_REQUEST_GPIOS, par, "%s: '%s' = GPIO%d\n",
+                            __func__, name, gpio);
+    }
 
-	fbtft_par_dbg(DEBUG_REQUEST_GPIOS, par, "%s: '%s' GPIO\n",
-		      __func__, name);
-
-	return 0;
+    return ret;
 }
 
 static int fbtft_request_gpios(struct fbtft_par *par)
 {
-	int i;
-	int ret;
+    int i;
+    int ret;
 
-	ret = fbtft_request_one_gpio(par, "reset", 0, &par->gpio.reset);
-	if (ret)
-		return ret;
-	ret = fbtft_request_one_gpio(par, "dc", 0, &par->gpio.dc);
-	if (ret)
-		return ret;
-	ret = fbtft_request_one_gpio(par, "rd", 0, &par->gpio.rd);
-	if (ret)
-		return ret;
-	ret = fbtft_request_one_gpio(par, "wr", 0, &par->gpio.wr);
-	if (ret)
-		return ret;
-	ret = fbtft_request_one_gpio(par, "cs", 0, &par->gpio.cs);
-	if (ret)
-		return ret;
-	ret = fbtft_request_one_gpio(par, "latch", 0, &par->gpio.latch);
-	if (ret)
-		return ret;
-	for (i = 0; i < 16; i++) {
-		ret = fbtft_request_one_gpio(par, "db", i,
-					     &par->gpio.db[i]);
-		if (ret)
-			return ret;
-		ret = fbtft_request_one_gpio(par, "led", i,
-					     &par->gpio.led[i]);
-		if (ret)
-			return ret;
-		ret = fbtft_request_one_gpio(par, "aux", i,
-					     &par->gpio.aux[i]);
-		if (ret)
-			return ret;
-	}
+    ret = fbtft_request_one_gpio(par, "reset-gpios", 0, &par->gpio.reset);
+    if (ret)
+        return ret;
+    ret = fbtft_request_one_gpio(par, "dc-gpios", 0, &par->gpio.dc);
+    if (ret)
+        return ret;
+    ret = fbtft_request_one_gpio(par, "rd-gpios", 0, &par->gpio.rd);
+    if (ret)
+        return ret;
+    ret = fbtft_request_one_gpio(par, "wr-gpios", 0, &par->gpio.wr);
+    if (ret)
+        return ret;
+    ret = fbtft_request_one_gpio(par, "cs-gpios", 0, &par->gpio.cs);
+    if (ret)
+        return ret;
+    ret = fbtft_request_one_gpio(par, "latch-gpios", 0, &par->gpio.latch);
+    if (ret)
+        return ret;
+    for (i = 0; i < 16; i++) {
+        ret = fbtft_request_one_gpio(par, "db-gpios", i,
+                         &par->gpio.db[i]);
+        if (ret)
+            return ret;
+        ret = fbtft_request_one_gpio(par, "led-gpios", i,
+                         &par->gpio.led[i]);
+        if (ret)
+            return ret;
+        ret = fbtft_request_one_gpio(par, "aux-gpios", i,
+                         &par->gpio.aux[i]);
+        if (ret)
+            return ret;
+    }
 
-	return 0;
+    return 0;
 }
 
 static int fbtft_backlight_update_status(struct backlight_device *bd)
@@ -214,18 +239,17 @@ static void fbtft_set_addr_win(struct fbtft_par *par, int xs, int ys, int xe,
 
 static void fbtft_reset(struct fbtft_par *par)
 {
-	if (!par->gpio.reset)
-		return;
-
-	fbtft_par_dbg(DEBUG_RESET, par, "%s()\n", __func__);
-
-	gpiod_set_value_cansleep(par->gpio.reset, 1);
-	usleep_range(20, 40);
-	gpiod_set_value_cansleep(par->gpio.reset, 0);
-	msleep(120);
-
-	gpiod_set_value_cansleep(par->gpio.cs, 1);  /* Activate chip */
+    if (!par->gpio.reset)
+        return;
+    fbtft_par_dbg(DEBUG_RESET, par, "%s()\n", __func__);
+    gpiod_set_value_cansleep(par->gpio.reset, 1);
+    msleep(10);
+    gpiod_set_value_cansleep(par->gpio.reset, 0);
+    msleep(200);
+    gpiod_set_value_cansleep(par->gpio.reset, 1);
+    msleep(10);
 }
+
 
 static void fbtft_update_display(struct fbtft_par *par, unsigned int start_line,
 				 unsigned int end_line)

@@ -296,9 +296,9 @@
 &emmc {
 	bus-width = <8>;
 	cap-mmc-highspeed;
-	//mmc-hs200-1_8v;
+	mmc-hs200-1_8v;
 	supports-emmc;
-	mmc-ddr-1_8v;
+	//mmc-ddr-1_8v;
 	no-sdio;
 	no-sd;
 	disable-wp;
@@ -796,11 +796,13 @@
 	};
 };
 
+/*
 &uart0 {
 	pinctrl-names = "default";
 	pinctrl-0 = <&uart0_xfer &uart0_cts>;
 	status = "okay";
 };
+*/
 
 &usb20_otg {
 	status = "okay";
